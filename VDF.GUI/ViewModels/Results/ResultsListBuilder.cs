@@ -38,6 +38,17 @@ namespace VDF.GUI.ViewModels {
 		public Func<IReadOnlyList<DuplicateItemVM>, (DuplicateItemVM? Best, string? Tooltip)>? PickBest { get; init; }
 		/// <summary>Shows the BEST-badged member first in its group, ahead of the sort order (#846).</summary>
 		public bool BestFirst { get; init; }
+		/// <summary>
+		/// Which member rows get displayed. Members it rejects still count for the group (the
+		/// "two members" rule, totals, wasted space, BEST pick) but get no row; the header notes how
+		/// many are hidden. Null shows every member.
+		/// </summary>
+		public Func<DuplicateItemVM, bool>? RowVisible { get; init; }
+		/// <summary>
+		/// Order of the member rows inside every group (the column-header sort), independent of
+		/// <see cref="SortMode"/>. None keeps the order that follows the group sort.
+		/// </summary>
+		public ResultsRowSort RowSort { get; init; } = ResultsRowSort.None;
 		/// <summary>Tombstone test, replaceable for tests. Defaults to <see cref="DuplicateItemVM.IsTombstone"/>.</summary>
 		public Func<DuplicateItemVM, bool>? IsTombstone { get; init; }
 		/// <summary>Offline test, replaceable for tests. Defaults to <see cref="DuplicateItemVM.IsOffline"/>.</summary>
@@ -98,6 +109,10 @@ namespace VDF.GUI.ViewModels {
 				// "group of one" — such groups vanish from the view entirely.
 				if (members.Count < 2) continue;
 				SortMembers(members, request.SortMode, request.SortDescending);
+				if (request.RowSort != ResultsRowSort.None)
+					SortMembersByRowSort(members, request.RowSort);
+				var visibleMembers = request.RowVisible == null ? members : members.Where(request.RowVisible).ToList();
+				if (visibleMembers.Count == 0) continue;
 
 				long total = 0, largest = 0;
 				float simMin = float.MaxValue, simMax = float.MinValue;
@@ -120,7 +135,7 @@ namespace VDF.GUI.ViewModels {
 					hasPHash |= m.ItemInfo.Flags.HasFlag(Core.DuplicateFlags.PHashMatched);
 				}
 
-				var rows = members.Select(m => new ResultsItemRow(m)).ToList();
+				var rows = visibleMembers.Select(m => new ResultsItemRow(m)).ToList();
 				bool sameDuration = AllSame(members, m => m.ItemInfo.Duration);
 				bool sameFrameSize = AllSame(members, m => m.ItemInfo.FrameSizeInt);
 				bool sameSize = AllSame(members, m => m.ItemInfo.SizeLong);
@@ -136,6 +151,7 @@ namespace VDF.GUI.ViewModels {
 				var header = new ResultsGroupHeader {
 					GroupId = gid,
 					Rows = rows,
+					HiddenRowCount = members.Count - visibleMembers.Count,
 					TotalBytes = total,
 					WastedBytes = total - largest,
 					SimilarityMin = simMin == float.MaxValue ? 0 : simMin,
@@ -238,16 +254,20 @@ namespace VDF.GUI.ViewModels {
 		/// "2 files · 1 on disk · previously deleted content" for tombstone groups.
 		/// </summary>
 		internal static string BuildSummary(ResultsGroupHeader header, GroupSummaryFormats formats) {
+			// The totals describe the whole group, also when the search hides some of its rows.
+			int all = header.FileCount + header.HiddenRowCount;
 			var parts = new List<string> {
-				header.FileCount == 1 ? formats.SingleFile : string.Format(formats.Files, header.FileCount),
+				all == 1 ? formats.SingleFile : string.Format(formats.Files, all),
 				header.TotalBytes.BytesToString()
 			};
 			if (header.WastedBytes > 0)
 				parts.Add(string.Format(formats.SaveUpTo, header.WastedBytes.BytesToString()));
-			if (header.OnDiskCount < header.FileCount)
+			if (header.OnDiskCount < all)
 				parts.Add(string.Format(formats.OnDisk, header.OnDiskCount));
 			if (header.HasTombstone)
 				parts.Add(formats.PreviouslyDeleted);
+			if (header.HiddenRowCount > 0)
+				parts.Add("showing " + header.FileCount + " of " + all);
 			return string.Join(" · ", parts);
 		}
 
@@ -277,6 +297,57 @@ namespace VDF.GUI.ViewModels {
 			});
 			for (int i = 0; i < decorated.Count; i++)
 				members[i] = decorated[i].m;
+		}
+
+		/// <summary>
+		/// Orders the rows inside one group by the column the user picked in the header strip.
+		/// Ties keep the order they had (group-sort order), so the two sorts work together.
+		/// </summary>
+		internal static void SortMembersByRowSort(List<DuplicateItemVM> members, ResultsRowSort sort) {
+			Comparison<DuplicateItemVM>? comparison = sort switch {
+				ResultsRowSort.NameAsc or ResultsRowSort.NameDesc =>
+					(a, b) => string.Compare(FileNameOf(a), FileNameOf(b), StringComparison.OrdinalIgnoreCase),
+				ResultsRowSort.DurationAsc or ResultsRowSort.DurationDesc =>
+					(a, b) => a.ItemInfo.Duration.CompareTo(b.ItemInfo.Duration),
+				ResultsRowSort.ResolutionAsc or ResultsRowSort.ResolutionDesc =>
+					(a, b) => CompareResolution(a, b),
+				ResultsRowSort.SizeAsc or ResultsRowSort.SizeDesc =>
+					(a, b) => a.ItemInfo.SizeLong.CompareTo(b.ItemInfo.SizeLong),
+				ResultsRowSort.DateOldest or ResultsRowSort.DateNewest =>
+					(a, b) => ResultsDates.Of(a.ItemInfo).CompareTo(ResultsDates.Of(b.ItemInfo)),
+				ResultsRowSort.BitrateAsc or ResultsRowSort.BitrateDesc =>
+					(a, b) => a.ItemInfo.BitRateKbs.CompareTo(b.ItemInfo.BitRateKbs),
+				ResultsRowSort.SimilarityAsc or ResultsRowSort.SimilarityDesc =>
+					(a, b) => a.ItemInfo.Similarity.CompareTo(b.ItemInfo.Similarity),
+				_ => null,
+			};
+			if (comparison == null) return;
+			if (sort is ResultsRowSort.NameDesc or ResultsRowSort.DurationDesc or ResultsRowSort.ResolutionDesc
+				or ResultsRowSort.SizeDesc or ResultsRowSort.DateNewest or ResultsRowSort.BitrateDesc
+				or ResultsRowSort.SimilarityDesc) {
+				var inner = comparison;
+				comparison = (a, b) => inner(b, a);
+			}
+			var decorated = members.Select((m, i) => (m, i)).ToList();
+			decorated.Sort((x, y) => {
+				int c = comparison(x.m, y.m);
+				return c != 0 ? c : x.i.CompareTo(y.i);
+			});
+			for (int i = 0; i < decorated.Count; i++)
+				members[i] = decorated[i].m;
+		}
+
+		static string FileNameOf(DuplicateItemVM d) {
+			ResultsSearchQuery.SplitFileName(d.ItemInfo.Path ?? string.Empty, out string name, out _);
+			return name;
+		}
+
+		/// <summary>Shorter side of the frame first (1080p vs 4K), then the larger frame, then the bitrate - the closest thing to "quality" in the columns.</summary>
+		static int CompareResolution(DuplicateItemVM a, DuplicateItemVM b) {
+			int c = ResultsSearchQuery.ShortSideOf(a.ItemInfo.FrameSize).CompareTo(ResultsSearchQuery.ShortSideOf(b.ItemInfo.FrameSize));
+			if (c != 0) return c;
+			c = a.ItemInfo.FrameSizeInt.CompareTo(b.ItemInfo.FrameSizeInt);
+			return c != 0 ? c : a.ItemInfo.BitRateKbs.CompareTo(b.ItemInfo.BitRateKbs);
 		}
 
 		static void SortGroups(List<ResultsGroupHeader> headers, ResultsSortMode mode, bool descending) {

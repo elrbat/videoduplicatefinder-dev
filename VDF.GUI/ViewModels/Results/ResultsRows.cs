@@ -28,7 +28,10 @@ namespace VDF.GUI.ViewModels {
 		/// <summary>1-based position in the current sort order, for the "Group N" title.</summary>
 		public int GroupNumber { get; internal set; }
 		public required IReadOnlyList<ResultsItemRow> Rows { get; init; }
+		/// <summary>Number of rows shown (members hidden by the search are not included, see <see cref="HiddenRowCount"/>).</summary>
 		public int FileCount => Rows.Count;
+		/// <summary>Members of the group whose row is hidden by the search; they still count for the totals below.</summary>
+		public int HiddenRowCount { get; init; }
 		/// <summary>Sum of member sizes; missing files count as 0.</summary>
 		public long TotalBytes { get; init; }
 		/// <summary>Bytes freed if only the largest member were kept.</summary>
