@@ -146,6 +146,9 @@ namespace VDF.GUI.ViewModels {
 				SortMode = SettingsFile.Instance.ResultsSortMode,
 				SortDescending = SettingsFile.Instance.ResultsSortDescending,
 				BestFirst = SettingsFile.Instance.ResultsBestFirst,
+				RowSort = _resultsRowSortChoice,
+				// Members of a found group that the search does not match stay in the group but get no row.
+				RowVisible = d => d.IsVisibleInFilter,
 				CollapsedGroups = collapsedResultsGroups,
 				ExpandedDetails = expandedResultsDetails,
 				PickBest = members => {

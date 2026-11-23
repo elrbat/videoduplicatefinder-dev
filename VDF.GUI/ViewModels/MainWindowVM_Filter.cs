@@ -130,17 +130,26 @@ namespace VDF.GUI.ViewModels {
 		/// path search is used.
 		/// </summary>
 		ResultsSearchQuery? _searchQuery;
+		/// <summary>
+		/// The rows the applied search is really about: files that satisfy every file term, inside the
+		/// groups that pass. Used to hide the other rows of a found group (see ShowAllRowsOfMatchingGroups).
+		/// Only filled while <see cref="_searchQuery"/> is set; the classic path search matches rows directly.
+		/// </summary>
+		HashSet<DuplicateItemVM> _searchRowHits = new();
 		void RebuildSearchPathIndex() {
 			var needle = FilterByPath;
 			string panel = BuildPanelQueryText(out _);
+			_searchRowHits = new HashSet<DuplicateItemVM>();
 			if (string.IsNullOrEmpty(needle) && panel.Length == 0) { _searchQuery = null; _groupsWithPathHit.Clear(); return; }
 
 			_searchQuery = ResultsSearchQuery.Parse(panel.Length == 0 ? needle : needle + " " + panel);
 			if (_searchQuery != null) {
-				_groupsWithPathHit = _searchQuery.MatchingGroups(
+				var (groups, rows) = _searchQuery.MatchingGroupsAndRows(
 					Duplicates,
 					d => d.ItemInfo.GroupId,
 					d => ToFileRecord(d));
+				_groupsWithPathHit = groups;
+				_searchRowHits = rows;
 				return;
 			}
 
@@ -207,15 +216,24 @@ namespace VDF.GUI.ViewModels {
 			}
 		}
 
-		/// <summary>The results filter; the view exposes it as always-active toolbar chips.</summary>
+		/// <summary>
+		/// The results filter; the view exposes it as always-active toolbar chips. Returns whether the
+		/// item belongs to a group that passes every filter. When the search matches only some rows of a
+		/// found group, the other members still belong to it (return true) but are not visible:
+		/// <see cref="DuplicateItemVM.IsVisibleInFilter"/> is false for them, so delete and the automatic
+		/// selection - which only act on visible rows - never touch what the user cannot see.
+		/// </summary>
 		internal bool DuplicatesFilterCore(DuplicateItemVM data) {
 			bool ok = true;
+			bool searchRowHidden = false;
 			if (_searchQuery != null) {
 				ok = _groupsWithPathHit.Contains(data.ItemInfo.GroupId);
+				searchRowHidden = ok && !_showAllRowsOfMatchingGroups && !_searchRowHits.Contains(data);
 			}
 			else if (!string.IsNullOrEmpty(FilterByPath)) {
-				ok = PathMatchesFilter(data.ItemInfo.Path, FilterByPath)
-					 || _groupsWithPathHit.Contains(data.ItemInfo.GroupId);
+				bool rowHit = PathMatchesFilter(data.ItemInfo.Path, FilterByPath);
+				ok = rowHit || _groupsWithPathHit.Contains(data.ItemInfo.GroupId);
+				searchRowHidden = ok && !rowHit && !_showAllRowsOfMatchingGroups;
 			}
 
 			if (ok && FileType.Value != FileTypeFilter.All)
@@ -233,7 +251,7 @@ namespace VDF.GUI.ViewModels {
 			if (ok && FilterOnlyGroupsWithAiMatches)
 				ok = _groupsWithAiMatch.Contains(data.ItemInfo.GroupId);
 
-			data.IsVisibleInFilter = ok;
+			data.IsVisibleInFilter = ok && !searchRowHidden;
 			return ok;
 		}
 	}

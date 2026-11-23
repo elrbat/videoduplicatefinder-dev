@@ -337,7 +337,8 @@ namespace VDF.GUI.ViewModels {
 
 			if (result == null || result.Count == 0) return;
 
-			var selectedItems = Duplicates.Where(s => s.Checked).ToList();
+			// Visible rows only: files hidden by a filter are not copied behind the user's back.
+			var selectedItems = Duplicates.Where(s => s.Checked && s.IsVisibleInFilter).ToList();
 			if (selectedItems.Count == 0) return;
 
 			IsBusy = true;
@@ -363,7 +364,7 @@ namespace VDF.GUI.ViewModels {
 		});
 
 		public ReactiveCommand<Unit, Unit> MoveCheckedItemsCommand => ReactiveCommand.CreateFromTask(
-			() => MoveItemsToPickedFolderAsync(() => Duplicates.Where(s => s.Checked).ToList()));
+			() => MoveItemsToPickedFolderAsync(() => Duplicates.Where(s => s.Checked && s.IsVisibleInFilter).ToList()));
 
 		// Row context menu: moves the highlighted row(s), independent of the checkboxes.
 		// The file being relocated is typically the KEEPER - exactly the one you would

@@ -92,14 +92,22 @@ namespace VDF.GUI.ViewModels {
 
 		/// <summary>Called at the end of every results rebuild, so the label also follows deletes and imports.</summary>
 		internal void UpdateFilterResultsText() {
+			UpdateRowFilterToggleVisible();
 			string text = string.Empty;
 			if (Duplicates.Count > 0 && IsAnyResultsFilterActive()) {
 				int shownFiles = 0;
 				foreach (var group in resultsGroups) shownFiles += group.FileCount;
 				var allGroups = new HashSet<Guid>();
-				foreach (var d in Duplicates) allGroups.Add(d.ItemInfo.GroupId);
+				int hiddenChecked = 0;
+				foreach (var d in Duplicates) {
+					allGroups.Add(d.ItemInfo.GroupId);
+					if (d.Checked && !d.IsVisibleInFilter) hiddenChecked++;
+				}
 				text = "Showing " + shownFiles.ToString("N0") + " of " + Duplicates.Count.ToString("N0") + " files in "
 					+ resultsGroups.Count.ToString("N0") + " of " + allGroups.Count.ToString("N0") + " groups";
+				// Checked files the filters hide are easy to forget: say so.
+				if (hiddenChecked > 0)
+					text += " · " + hiddenChecked.ToString("N0") + " checked " + (hiddenChecked == 1 ? "file is" : "files are") + " hidden";
 			}
 			if (text == _filterResultsText) return;
 			_filterResultsText = text;

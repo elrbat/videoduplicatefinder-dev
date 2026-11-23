@@ -383,13 +383,22 @@ namespace VDF.GUI.ViewModels {
 		}
 
 		/// <summary>The ids of all groups that satisfy the query.</summary>
-		internal HashSet<Guid> MatchingGroups<T>(IEnumerable<T> items, Func<T, Guid> groupOf, Func<T, FileRecord> recordOf) {
-			var result = new HashSet<Guid>();
+		internal HashSet<Guid> MatchingGroups<T>(IEnumerable<T> items, Func<T, Guid> groupOf, Func<T, FileRecord> recordOf) where T : class =>
+			MatchingGroupsAndRows(items, groupOf, recordOf).Groups;
+
+		/// <summary>
+		/// The groups that satisfy the query plus, inside those groups, the files that satisfy every
+		/// file term - the rows the search is really about. A query without file terms (only
+		/// exclusions, total or count) counts every file of a passing group as a hit.
+		/// </summary>
+		internal (HashSet<Guid> Groups, HashSet<T> Rows) MatchingGroupsAndRows<T>(IEnumerable<T> items, Func<T, Guid> groupOf, Func<T, FileRecord> recordOf) where T : class {
+			var groups = new HashSet<Guid>();
+			var rows = new HashSet<T>();
 			foreach (var group in items.GroupBy(groupOf)) {
 				long total = 0;
 				int count = 0;
-				bool fileMatched = fileTerms.Count == 0;
 				bool excluded = false;
+				var hits = new List<T>();
 
 				foreach (T item in group) {
 					FileRecord r = recordOf(item);
@@ -399,22 +408,25 @@ namespace VDF.GUI.ViewModels {
 
 					SplitFileName(path, out string fileName, out string nameNoExt);
 
-					if (!fileMatched && AllMatch(fileTerms, r, path, fileName, nameNoExt))
-						fileMatched = true;
+					if (fileTerms.Count == 0 || AllMatch(fileTerms, r, path, fileName, nameNoExt))
+						hits.Add(item);
 					if (!excluded && AnyMatch(excludeTerms, r, path, fileName, nameNoExt))
 						excluded = true;
 				}
 
-				if (!fileMatched || excluded) continue;
+				if (hits.Count == 0 || excluded) continue;
 
 				bool groupOk = true;
 				foreach (var t in groupTerms) {
 					double value = t.Field == Field.Total ? total : count;
 					if (!CompareNumber(value, t)) { groupOk = false; break; }
 				}
-				if (groupOk) result.Add(group.Key);
+				if (!groupOk) continue;
+
+				groups.Add(group.Key);
+				foreach (T hit in hits) rows.Add(hit);
 			}
-			return result;
+			return (groups, rows);
 		}
 
 		/// <summary>Works the same on every OS: both \ and / count as folder separators.</summary>
