@@ -476,6 +476,18 @@
         <TextBlock Margin="10,0,0,0" FontSize="12" Opacity="0.85" VerticalAlignment="Center"
                    IsVisible="{Binding IsFilterResultsVisible}"
                    Text="{Binding FilterResultsText}" />
+        <CheckBox Margin="10,0,0,0" FontSize="12" VerticalAlignment="Center"
+                  IsVisible="{Binding IsRowFilterToggleVisible}"
+                  IsChecked="{Binding ShowAllRowsOfMatchingGroups}"
+                  Content="Show all rows of matching groups"
+                  ToolTip.Tip="Off: a group found by the search shows only the rows that match it. On: all rows of the matching groups are shown." />
+        <StackPanel Margin="10,0,0,0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+                    IsVisible="{Binding IsResultsRowSortActive}">
+          <TextBlock FontSize="12" VerticalAlignment="Center" Text="{Binding ResultsRowSortText}" />
+          <Button FontSize="11" Padding="6,1" CornerRadius="10" Content="✕"
+                  Command="{Binding ClearResultsRowSortCommand}"
+                  ToolTip.Tip="Clear row sorting" />
+        </StackPanel>
         <ToggleButton
             Classes="chip"
             Margin="10,0,0,0"
@@ -553,9 +565,22 @@
             </Thumb.Template>
           </Thumb>
         </Grid>
-        <TextBlock DockPanel.Dock="Right" Classes="colheader" Width="76" TextAlignment="Right"
-                   IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowSimilarityColumn}"
-                   Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.Match]}" />
+        <Button DockPanel.Dock="Right" Width="76" Padding="0" MinWidth="0" MinHeight="0" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Right"
+                IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowSimilarityColumn}"
+                ToolTip.Tip="Click to sort the rows inside every group (the group sort in the toolbar is not affected)">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Classes="colheader" Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.Match]}" />
+            <TextBlock Grid.Column="1" Margin="3,0,0,0" Classes="colheader" Text="{Binding RowSortArrowMatch}" />
+          </Grid>
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="Match - highest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.SimilarityDesc}" />
+              <MenuItem Header="Match - lowest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.SimilarityAsc}" />
+              <Separator />
+              <MenuItem Header="Clear row sorting" Command="{Binding ClearResultsRowSortCommand}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
         <TextBlock DockPanel.Dock="Right" Classes="colheader" Width="80"
                    IsVisible="{Binding ResultsShowClipOffsetColumn}"
                    Text="{Binding Source={x:Static local:App.Lang}, Path=[DuplicateList.Header.ClipOffset]}" />
@@ -567,17 +592,73 @@
         <TextBlock DockPanel.Dock="Right" Classes="colheader" Width="104"
                    IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowLanguagesColumn}"
                    Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.Languages]}" />
-        <TextBlock DockPanel.Dock="Right" Classes="colheader" Width="78"
-                   IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowBitrateColumn}"
-                   Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.Bitrate]}" />
-        <TextBlock DockPanel.Dock="Right" Classes="colheader" Width="100"
-                   IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowSizeDateColumn}"
-                   Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.SizeDate]}" />
-        <TextBlock DockPanel.Dock="Right" Classes="colheader" Width="92"
-                   IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowDurationColumn}"
-                   Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.DurationRes]}" />
-        <TextBlock Classes="colheader" Margin="6,0,0,0"
-                   Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.File]}" />
+        <Button DockPanel.Dock="Right" Width="78" Padding="0" MinWidth="0" MinHeight="0" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
+                IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowBitrateColumn}"
+                ToolTip.Tip="Click to sort the rows inside every group (the group sort in the toolbar is not affected)">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Classes="colheader" Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.Bitrate]}" />
+            <TextBlock Grid.Column="1" Margin="3,0,0,0" Classes="colheader" Text="{Binding RowSortArrowBitrate}" />
+          </Grid>
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="Bitrate - highest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.BitrateDesc}" />
+              <MenuItem Header="Bitrate - lowest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.BitrateAsc}" />
+              <Separator />
+              <MenuItem Header="Clear row sorting" Command="{Binding ClearResultsRowSortCommand}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+        <Button DockPanel.Dock="Right" Width="100" Padding="0" MinWidth="0" MinHeight="0" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
+                IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowSizeDateColumn}"
+                ToolTip.Tip="Click to sort the rows inside every group (the group sort in the toolbar is not affected)">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Classes="colheader" Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.SizeDate]}" />
+            <TextBlock Grid.Column="1" Margin="3,0,0,0" Classes="colheader" Text="{Binding RowSortArrowSize}" />
+          </Grid>
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="Size - largest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.SizeDesc}" />
+              <MenuItem Header="Size - smallest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.SizeAsc}" />
+              <MenuItem Header="Date - newest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.DateNewest}" />
+              <MenuItem Header="Date - oldest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.DateOldest}" />
+              <Separator />
+              <MenuItem Header="Clear row sorting" Command="{Binding ClearResultsRowSortCommand}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+        <Button DockPanel.Dock="Right" Width="92" Padding="0" MinWidth="0" MinHeight="0" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
+                IsVisible="{Binding Source={x:Static Settings:SettingsFile.Instance}, Path=ShowDurationColumn}"
+                ToolTip.Tip="Click to sort the rows inside every group (the group sort in the toolbar is not affected)">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Classes="colheader" Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.DurationRes]}" />
+            <TextBlock Grid.Column="1" Margin="3,0,0,0" Classes="colheader" Text="{Binding RowSortArrowDuration}" />
+          </Grid>
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="Duration - longest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.DurationDesc}" />
+              <MenuItem Header="Duration - shortest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.DurationAsc}" />
+              <MenuItem Header="Resolution - highest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.ResolutionDesc}" />
+              <MenuItem Header="Resolution - lowest first" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.ResolutionAsc}" />
+              <Separator />
+              <MenuItem Header="Clear row sorting" Command="{Binding ClearResultsRowSortCommand}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+        <Button Margin="6,0,0,0" HorizontalAlignment="Left" Padding="0" MinWidth="0" MinHeight="0" Background="Transparent" BorderThickness="0"
+                ToolTip.Tip="Click to sort the rows inside every group (the group sort in the toolbar is not affected)">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Classes="colheader" Text="{Binding Source={x:Static local:App.Lang}, Path=[Results.Header.File]}" />
+            <TextBlock Grid.Column="1" Margin="3,0,0,0" Classes="colheader" Text="{Binding RowSortArrowFile}" />
+          </Grid>
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="File name - A to Z" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.NameAsc}" />
+              <MenuItem Header="File name - Z to A" Command="{Binding SetResultsRowSortCommand}" CommandParameter="{x:Static vm:ResultsRowSort.NameDesc}" />
+              <Separator />
+              <MenuItem Header="Clear row sorting" Command="{Binding ClearResultsRowSortCommand}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
       </DockPanel>
     </Border>
 
