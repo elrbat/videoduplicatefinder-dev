@@ -287,16 +287,23 @@ namespace VDF.Core.AI {
 			// FileShare.None collisions, or one process's cleanup deleting the other's files.
 			string tempRoot = Path.Combine(Path.GetTempPath(), $"VDF.AiDownload.{Guid.NewGuid():N}");
 			Directory.CreateDirectory(tempRoot);
-			string archivePath = Path.Combine(tempRoot, archiveName);
 			try {
 				string runtimeStep = $"ONNX Runtime {RuntimeVersion}";
-				await DownloadUtils.DownloadFileAsync(http, url, archivePath, runtimeStep,
-					(done, total) => progress?.Report(new AiDownloadProgress(runtimeStep, done, total)), token);
-
-				string extractDir = Path.Combine(tempRoot, "extracted");
-				Directory.CreateDirectory(extractDir);
-				ArchiveUtils.Extract(archivePath, extractDir,
-					archiveName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? ArchiveKind.Zip : ArchiveKind.TarGz);
+				string[] libraries;
+				try {
+					libraries = await DownloadRuntimeArchiveAsync(http, progress, token, url, archiveName, runtimeStep, tempRoot);
+				}
+				catch (Exception e) when (e is not OperationCanceledException && AiRuntimeWheel.GetPlan(RuntimeVersion) is not null) {
+					// The GitHub release archive once answered 404 for every user, which took AI
+					// matching away overnight. The same release's PyPI wheel carries the same libraries.
+					Logger.Instance.Info($"ONNX Runtime release archive unavailable ({e.Message}), falling back to the PyPI wheel.");
+					try {
+						libraries = await DownloadRuntimeWheelAsync(http, progress, token, AiRuntimeWheel.GetPlan(RuntimeVersion)!.Value, runtimeStep, tempRoot);
+					}
+					catch (Exception e2) when (e2 is not OperationCanceledException) {
+						throw new IOException($"{e.Message} (the fallback source failed too: {e2.Message})", e2);
+					}
+				}
 
 				// Purge any previously installed runtime BEFORE copying: the Linux/macOS
 				// library names carry the version (libonnxruntime.so.1.23.2), so upgraded
@@ -310,15 +317,8 @@ namespace VDF.Core.AI {
 						try { File.Delete(old); } catch { /* loaded/locked — overwritten below */ }
 				}
 
-				// Archives lay out onnxruntime-<rid>-<ver>/lib/<libraries>; flatten lib/ into AiFolder.
-				string? libDir = Directory.EnumerateDirectories(extractDir, "lib", SearchOption.AllDirectories).FirstOrDefault();
-				if (libDir == null)
-					throw new IOException($"Downloaded ONNX Runtime archive has no lib/ directory ({archiveName}).");
-				foreach (string file in Directory.EnumerateFiles(libDir)) {
-					string name = Path.GetFileName(file);
-					if (name.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)) continue;
-					File.Copy(file, Path.Combine(AiFolder, name), overwrite: true);
-				}
+				foreach (string file in libraries)
+					File.Copy(file, Path.Combine(AiFolder, Path.GetFileName(file)), overwrite: true);
 				await File.WriteAllTextAsync(Path.Combine(AiFolder, VersionMarkerFileName), RuntimeVersion, token);
 				if (FindRuntimeLibrary() == null)
 					throw new IOException("ONNX Runtime archive extracted but no runtime library was found in it.");
@@ -326,6 +326,41 @@ namespace VDF.Core.AI {
 			finally {
 				try { Directory.Delete(tempRoot, true); } catch { }
 			}
+		}
+
+		/// <summary>Downloads and unpacks the onnxruntime release archive; returns its library files.</summary>
+		static async Task<string[]> DownloadRuntimeArchiveAsync(HttpClient http, IProgress<AiDownloadProgress>? progress, CancellationToken token,
+			Uri url, string archiveName, string runtimeStep, string tempRoot) {
+			string archivePath = Path.Combine(tempRoot, archiveName);
+			await DownloadUtils.DownloadFileAsync(http, url, archivePath, runtimeStep,
+				(done, total) => progress?.Report(new AiDownloadProgress(runtimeStep, done, total)), token);
+
+			string extractDir = Path.Combine(tempRoot, "extracted");
+			Directory.CreateDirectory(extractDir);
+			ArchiveUtils.Extract(archivePath, extractDir,
+				archiveName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? ArchiveKind.Zip : ArchiveKind.TarGz);
+
+			// Archives lay out onnxruntime-<rid>-<ver>/lib/<libraries>; flatten lib/ into AiFolder.
+			string? libDir = Directory.EnumerateDirectories(extractDir, "lib", SearchOption.AllDirectories).FirstOrDefault();
+			if (libDir == null)
+				throw new IOException($"Downloaded ONNX Runtime archive has no lib/ directory ({archiveName}).");
+			return Directory.EnumerateFiles(libDir)
+				.Where(f => !f.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase))
+				.ToArray();
+		}
+
+		/// <summary>Downloads the pinned PyPI wheel of the same release and returns its native library files.</summary>
+		static async Task<string[]> DownloadRuntimeWheelAsync(HttpClient http, IProgress<AiDownloadProgress>? progress, CancellationToken token,
+			AiRuntimeWheel.Plan wheel, string runtimeStep, string tempRoot) {
+			string wheelPath = Path.Combine(tempRoot, wheel.FileName);
+			await DownloadUtils.DownloadFileAsync(http, wheel.Url, wheelPath, runtimeStep,
+				(done, total) => progress?.Report(new AiDownloadProgress(runtimeStep, done, total)), token);
+			AiRuntimeWheel.VerifySha256(wheelPath, wheel.Sha256);
+
+			string extractDir = Path.Combine(tempRoot, "extracted-wheel");
+			Directory.CreateDirectory(extractDir);
+			ArchiveUtils.Extract(wheelPath, extractDir, ArchiveKind.Zip); // a wheel is a plain zip
+			return AiRuntimeWheel.FindLibraries(extractDir);
 		}
 
 		static async Task DownloadModelAsync(HttpClient http, IProgress<AiDownloadProgress>? progress, CancellationToken token) {
